@@ -4,7 +4,26 @@
 const ADMIN_IDS = [7638194816]; // администраторы (кроме секрета ADMIN_ID)
 const FEE = 0.05, LOT_MAX = 10, PMIN = 0.5, PMAX = 5; // рынок: комиссия, лимит лотов, цена от 50% до 500% ценности
 const GAME_URL = 'https://ahmedovalimagomed1-a11y.github.io/Cars/';
+const HELP = `📖 <b>Как играть</b>
+
+1. Открой игру кнопкой ниже
+2. Покупай кейсы — от 1 000 ₽
+3. Выбитые машины лежат в «Гараже»
+4. Продай машину или выставь на «Рынке»
+
+🎁 Бесплатно: «Ещё» → Ежедневный бонус и Подработка
+🍀 Удача повышает шанс на редкие тачки
+🎟 Промокоды вводятся в «Ещё»
+👥 За друзей — процент с их продаж`;
 const START = 100000, WORK_CD = 60000, DAILY_CD = 86400000, DAILY_BONUS = 20000, GARAGE_CAP = 300;
+// Друзья: % с продаж друга, бонус новичку по ссылке, награды за активных друзей
+const REF_PCT = 0.05, REF_MIN_OPENS = 5, REF_FRIEND_BONUS = 10000;
+const REF_MS = [
+  { need: 1, kind: 'rub', amount: 25000, label: '25 000 ₽' },
+  { need: 3, kind: 'rub', amount: 100000, label: '100 000 ₽' },
+  { need: 5, kind: 'luck', mult: 5, hours: 24, label: 'Удача ×5 на 24 ч' },
+  { need: 10, kind: 'rub', amount: 500000, label: '500 000 ₽' },
+];
 
 const CARS = [[["ВАЗ-2105", 150, 30],["ВАЗ-2107", 200, 25],["Daewoo Matiz", 180, 20],["ЗАЗ Sens", 170, 20],["Lada Kalina", 250, 15],["ВАЗ-2114", 240, 15],["Lada Priora", 300, 7],["Lada Granta", 350, 3]],
 [["Renault Logan", 700, 30],["Kia Rio", 800, 25],["Hyundai Solaris", 900, 22],["Lada Vesta", 1000, 18],["Volkswagen Polo", 1200, 15],["Ford Focus", 1100, 15],["Mazda 3", 1600, 8],["Skoda Octavia", 1400, 7],["Toyota Corolla", 1800, 3]],
@@ -47,9 +66,11 @@ async function schema(DB) {
     DB.prepare('CREATE INDEX IF NOT EXISTS idx_lots_seller ON lots(seller)'),
     DB.prepare('CREATE INDEX IF NOT EXISTS idx_cars_uid ON cars(uid)'),
     DB.prepare('CREATE INDEX IF NOT EXISTS idx_users_bal ON users(bal)'),
+    DB.prepare('CREATE TABLE IF NOT EXISTS refs(uid INTEGER PRIMARY KEY,ref INTEGER,earned INTEGER DEFAULT 0,ts INTEGER)'),
+    DB.prepare('CREATE INDEX IF NOT EXISTS idx_refs_ref ON refs(ref)'),
   ]);
   // добавляем колонки удачи к промокодам (если уже есть — ошибка игнорируется)
-  for (const q of ['ALTER TABLE promos ADD COLUMN luck REAL DEFAULT 1', 'ALTER TABLE promos ADD COLUMN hours REAL DEFAULT 0']) {
+  for (const q of ['ALTER TABLE promos ADD COLUMN luck REAL DEFAULT 1', 'ALTER TABLE promos ADD COLUMN hours REAL DEFAULT 0', 'ALTER TABLE users ADD COLUMN refearned INTEGER DEFAULT 0', 'ALTER TABLE users ADD COLUMN refbonus INTEGER DEFAULT 0']) {
     try { await DB.prepare(q).run(); } catch (e) { /* колонка уже есть */ }
   }
   ready = true;
@@ -71,10 +92,20 @@ async function auth(initData, token) {
   const secret = await hmac('WebAppData', token);
   if (hex(await hmac(secret, dcs)) !== h) return null;
   if (Date.now() / 1000 - Number(p.get('auth_date') || 0) > 86400 * 3) return null;
-  try { return JSON.parse(p.get('user')); } catch { return null; }
+  try { return { u: JSON.parse(p.get('user')), sp: p.get('start_param') || '' }; } catch { return null; }
 }
 const tg = (env, method, body) =>
   fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/${method}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then((r) => r.json());
+
+// @username бота — нужен для реферальных ссылок (кэшируем на изолят)
+let BOT_USERNAME = '';
+async function botName(env) {
+  if (!BOT_USERNAME) {
+    try { const r = await tg(env, 'getMe'); if (r && r.ok) BOT_USERNAME = r.result.username || ''; } catch (e) { /* ignore */ }
+  }
+  return BOT_USERNAME;
+}
+const refLink = (bot, uid) => (bot ? `https://t.me/${bot}?startapp=ref_${uid}` : '');
 
 // ---------- игра ----------
 function wpick(w) {
@@ -95,7 +126,7 @@ async function state(DB, uid, isAdmin) {
   const u = await DB.prepare('SELECT * FROM users WHERE id=?').bind(uid).first();
   const cars = (await DB.prepare('SELECT id,name n,tier t,value v FROM cars WHERE uid=? ORDER BY id').bind(uid).all()).results;
   const now = Date.now();
-  return { ok: true, bal: u.bal, opened: u.opened, best: u.best, lw: u.lw, ld: u.ld, luck: u.luck_until > now ? u.luck : 1, luckUntil: u.luck_until, cars, admin: isAdmin, now };
+  return { ok: true, id: uid, bal: u.bal, opened: u.opened, best: u.best, lw: u.lw, ld: u.ld, luck: u.luck_until > now ? u.luck : 1, luckUntil: u.luck_until, cars, admin: isAdmin, now };
 }
 async function credit(DB, uid, item) {
   const now = Date.now();
@@ -103,11 +134,24 @@ async function credit(DB, uid, item) {
   if (item.luck) await DB.prepare('UPDATE users SET luck=?, luck_until=MAX(luck_until,?)+? WHERE id=?').bind(item.luck, now, item.hours * 3600000, uid).run();
 }
 
+// 5% с каждой продажи друга уходят пригласившему (друг должен открыть REF_MIN_OPENS кейсов)
+async function payRef(DB, uid, sum) {
+  if (!(sum > 0)) return;
+  const r = await DB.prepare('SELECT u.opened, r.ref FROM users u LEFT JOIN refs r ON r.uid=u.id WHERE u.id=?').bind(uid).first();
+  if (!r || !r.ref || r.opened < REF_MIN_OPENS) return;
+  const cut = Math.floor(sum * REF_PCT);
+  if (cut < 1) return;
+  await DB.batch([
+    DB.prepare('UPDATE users SET bal=bal+?,refearned=refearned+? WHERE id=?').bind(cut, cut, r.ref),
+    DB.prepare('UPDATE refs SET earned=earned+? WHERE uid=?').bind(cut, uid),
+  ]);
+}
+
 async function handle(a, uid, u, env) {
   const DB = env.DB, isAdmin = ADMIN_IDS.includes(uid) || uid === Number(env.ADMIN_ID);
   const st = () => state(DB, uid, isAdmin);
   switch (a.a) {
-    case 'state': return json(await st());
+    case 'state': return json({ ...(await st()), bot: await botName(env) });
 
     case 'open': {
       const ci = a.ci | 0, n = a.n === 5 ? 5 : 1, c = CASES[ci];
@@ -139,6 +183,7 @@ async function handle(a, uid, u, env) {
       const r = await DB.prepare(sql).bind(...args).all();
       const sum = r.results.reduce((s, x) => s + x.value, 0);
       if (sum) await DB.prepare('UPDATE users SET bal=bal+? WHERE id=?').bind(sum, uid).run();
+      await payRef(DB, uid, sum);
       return json({ ...(await st()), sold: r.results.length, sum });
     }
 
@@ -241,6 +286,7 @@ async function handle(a, uid, u, env) {
         DB.prepare('INSERT INTO cars(uid,name,tier,value) VALUES(?,?,?,?)').bind(uid, L.car_name, L.tier, L.value),
         DB.prepare('INSERT INTO deals(buyer,seller,car_name,tier,price,fee,ts) VALUES(?,?,?,?,?,?,?)').bind(uid, L.seller, L.car_name, L.tier, L.price, fee, Date.now()),
       ]);
+      await payRef(DB, L.seller, L.price - fee);
       return json({ ...(await st()), bought: L.car_name });
     }
 
@@ -250,6 +296,32 @@ async function handle(a, uid, u, env) {
       const L = r.results[0];
       await DB.prepare('INSERT INTO cars(uid,name,tier,value) VALUES(?,?,?,?)').bind(uid, L.car_name, L.tier, L.value).run();
       return json(await st());
+    }
+
+    case 'friends': {
+      const rows = (await DB.prepare('SELECT r.uid,r.earned,u.name,u.opened FROM refs r JOIN users u ON u.id=r.uid WHERE r.ref=? ORDER BY r.earned DESC, r.ts DESC LIMIT 100').bind(uid).all()).results;
+      const uu = await DB.prepare('SELECT refearned,refbonus FROM users WHERE id=?').bind(uid).first();
+      const bonus = uu.refbonus || 0;
+      const active = rows.filter((r) => r.opened >= REF_MIN_OPENS).length;
+      return json({
+        ok: true, id: uid, bot: await botName(env),
+        count: rows.length, active, earned: uu.refearned || 0,
+        pct: Math.round(REF_PCT * 100), min: REF_MIN_OPENS,
+        list: rows.map((r) => ({ n: r.name || 'Игрок', opened: r.opened, earned: r.earned, lvl: 1 + Math.floor(r.opened / 10) })),
+        ms: REF_MS.map((m, i) => ({ i, need: m.need, label: m.label, ok: active >= m.need, claimed: !!(bonus & (1 << i)) })),
+      });
+    }
+
+    case 'refclaim': {
+      const i = a.i | 0, m = REF_MS[i];
+      if (!m) return err('bad');
+      const active = (await DB.prepare('SELECT COUNT(*) c FROM refs r JOIN users u ON u.id=r.uid WHERE r.ref=? AND u.opened>=?').bind(uid, REF_MIN_OPENS).first()).c;
+      if (active < m.need) return err('need', `Нужно активных друзей: ${m.need}`);
+      const upd = await DB.prepare('UPDATE users SET refbonus=COALESCE(refbonus,0)+? WHERE id=? AND (COALESCE(refbonus,0) & ?)=0').bind(1 << i, uid, 1 << i).run();
+      if (!upd.meta.changes) return err('taken', 'Уже получено');
+      if (m.kind === 'rub') await DB.prepare('UPDATE users SET bal=bal+? WHERE id=?').bind(m.amount, uid).run();
+      else await DB.prepare('UPDATE users SET luck=?,luck_until=MAX(luck_until,?)+? WHERE id=?').bind(m.mult, Date.now(), m.hours * 3600000, uid).run();
+      return json({ ...(await st()), gain: m.kind === 'rub' ? m.amount : 0, label: m.label });
     }
 
     case 'news': {
@@ -305,19 +377,53 @@ async function webhook(req, env) {
   if (m.successful_payment) {
     const sp = m.successful_payment, it = ITEMS[sp.invoice_payload], uid = m.from.id;
     if (it && sp.total_amount === it.stars) {
-      await DB_ensure(env.DB, m.from);
+      await ensure(env.DB, m.from, '');
       const dup = await env.DB.prepare('INSERT OR IGNORE INTO pays(id) VALUES(?)').bind(sp.telegram_payment_charge_id).run();
       if (dup.meta.changes) {
         await credit(env.DB, uid, it);
         await tg(env, 'sendMessage', { chat_id: uid, text: `✅ Покупка получена: ${it.title}` });
       }
     }
-  } else if (m.text && m.text.startsWith('/start')) {
-    await tg(env, 'sendMessage', { chat_id: m.chat.id, text: 'Добро пожаловать в Автокейс! Открывай кейсы, выбивай машины и продавай их.', reply_markup: { inline_keyboard: [[{ text: '🎮 Играть', web_app: { url: GAME_URL } }]] } });
+  } else if (m.text && m.text.startsWith('/') && m.from) {
+    const [cmd, payload = ''] = m.text.trim().split(/\s+/);
+    await ensure(env.DB, m.from, cmd === '/start' ? payload : '');
+    const bot = await botName(env), link = refLink(bot, m.from.id);
+    const share = link
+      ? `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent('Залетай в Автокейс — крутим кейсы с тачками!')}`
+      : GAME_URL;
+    const kb = { inline_keyboard: [[{ text: '🎮 Играть', web_app: { url: GAME_URL } }], [{ text: '👥 Позвать друга', url: share }]] };
+    if (cmd === '/invite') {
+      await tg(env, 'sendMessage', {
+        chat_id: m.chat.id, parse_mode: 'HTML', disable_web_page_preview: true,
+        text: `👥 <b>Твоя ссылка</b>\n\n<code>${link || GAME_URL}</code>\n\nЗа друга: <b>+${REF_FRIEND_BONUS.toLocaleString('ru-RU')} ₽</b> ему и <b>${Math.round(REF_PCT * 100)}%</b> с его продаж — тебе. Награды за 1, 3, 5 и 10 активных друзей.`,
+        reply_markup: { inline_keyboard: [[{ text: '📤 Поделиться ссылкой', url: share }], [{ text: '🎮 Играть', web_app: { url: GAME_URL } }]] },
+      });
+    } else if (cmd === '/help') {
+      await tg(env, 'sendMessage', { chat_id: m.chat.id, parse_mode: 'HTML', text: HELP, reply_markup: kb });
+    } else if (cmd === '/start') {
+      await tg(env, 'sendMessage', {
+        chat_id: m.chat.id, parse_mode: 'HTML',
+        text: `🎮 <b>Автокейс</b>\n\nОткрывай кейсы, выбивай тачки — от ВАЗ-2105 до Bugatti Chiron — и продавай их за ₽.\n\n• 6 редкостей, 41 машина\n• Рынок между игроками\n• Удача, промокоды, ежедневный бонус\n• ${Math.round(REF_PCT * 100)}% с продаж друзей\n\nЖми «Играть» 👇`,
+        reply_markup: kb,
+      });
+    }
   }
   return new Response('ok');
 }
-const DB_ensure = (DB, u) => DB.prepare('INSERT OR IGNORE INTO users(id,name,bal,created) VALUES(?,?,?,?)').bind(u.id, u.first_name || 'Игрок', START, Date.now()).run();
+
+// создать игрока + привязать пригласившего (?startapp=ref_ID или /start ref_ID)
+async function ensure(DB, u, startParam) {
+  const created = await DB.prepare('INSERT OR IGNORE INTO users(id,name,bal,created) VALUES(?,?,?,?)').bind(u.id, u.first_name || 'Игрок', START, Date.now()).run();
+  const ref = Number((/^ref_(\d+)$/.exec(String(startParam || '')) || [])[1] || 0);
+  // привязка только для новых игроков, чтобы старым нельзя было «приписать» чужого реферера
+  if (created.meta.changes && ref && ref !== u.id) {
+    const inv = await DB.prepare('SELECT id FROM users WHERE id=?').bind(ref).first();
+    if (inv) {
+      await DB.prepare('INSERT OR IGNORE INTO refs(uid,ref,ts) VALUES(?,?,?)').bind(u.id, ref, Date.now()).run();
+      await DB.prepare('UPDATE users SET bal=bal+? WHERE id=?').bind(REF_FRIEND_BONUS, u.id).run();
+    }
+  }
+}
 
 export default {
   async fetch(req, env) {
@@ -329,17 +435,27 @@ export default {
       if (url.pathname === '/setup') {
         if (url.searchParams.get('k') !== env.WEBHOOK_SECRET) return new Response('no', { status: 403 });
         const r = await tg(env, 'setWebhook', { url: url.origin + '/tg', secret_token: env.WEBHOOK_SECRET, allowed_updates: ['message', 'pre_checkout_query'], drop_pending_updates: true });
+        // оформление бота: кнопка «Играть» у поля ввода, описание, команды
+        await tg(env, 'setChatMenuButton', { menu_button: { type: 'web_app', text: 'Играть', web_app: { url: GAME_URL } } });
+        await tg(env, 'setMyCommands', { commands: [
+          { command: 'start', description: 'Играть в Автокейс' },
+          { command: 'invite', description: 'Пригласить друга' },
+          { command: 'help', description: 'Как играть' },
+        ] });
+        await tg(env, 'setMyShortDescription', { short_description: 'Кейсы с тачками: открывай, выбивай, продавай.' });
+        await tg(env, 'setMyDescription', { description: 'Автокейс — мини-игра с кейсами. Открывай кейсы, выбивай машины от ВАЗ-2105 до Bugatti Chiron, собирай гараж, торгуй на рынке и приглашай друзей за процент с их продаж.' });
         return json(r);
       }
       if (url.pathname === '/api' && req.method === 'POST') {
-        const user = await auth(req.headers.get('x-init'), env.BOT_TOKEN);
-        if (!user) return json({ ok: false, e: 'auth', m: 'Открой игру через бота в Telegram' }, 401);
-        await DB_ensure(env.DB, user);
+        const sess = await auth(req.headers.get('x-init'), env.BOT_TOKEN);
+        if (!sess) return json({ ok: false, e: 'auth', m: 'Открой игру через бота в Telegram' }, 401);
+        const user = sess.u;
+        await ensure(env.DB, user, sess.sp);
         const u = await env.DB.prepare('SELECT * FROM users WHERE id=?').bind(user.id).first();
         if (u.banned) return err('banned', 'Аккаунт заблокирован');
         return await handle(await req.json(), user.id, u, env);
       }
-      return json({ ok: true, name: 'autocase', features: ['news', 'market', 'luck', 'promo', 'admin'], cases: CASES.length });
+      return json({ ok: true, name: 'autocase', features: ['news', 'market', 'luck', 'promo', 'friends', 'admin'], cases: CASES.length });
     } catch (e) {
       return json({ ok: false, e: 'server', m: String((e && e.message) || e) }, 500);
     }
