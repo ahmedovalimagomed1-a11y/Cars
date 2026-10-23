@@ -88,6 +88,11 @@ h1{font-size:20px;margin:8px 4px 12px}
 .dot{width:10px;height:10px;border-radius:50%;background:#ff453a;box-shadow:0 0 8px #ff453a;flex:none}
 textarea.inp{min-height:90px;resize:vertical}
 .nitem{padding:12px 0;border-bottom:1px solid var(--c2)}.nitem p{white-space:pre-wrap;color:#d6d6dc;font-weight:600;margin-top:6px}.nitem small{color:var(--mut)}
+.fhero{position:relative;border-radius:26px;padding:20px;background:linear-gradient(135deg,#25d366,#0fa36b 55%,#0a7bd4);color:#03210f;margin:4px 0 14px;box-shadow:0 0 36px #25d36644;overflow:hidden}
+.fhero:after{content:"";position:absolute;right:-34px;top:-46px;width:160px;height:160px;border-radius:50%;background:#ffffff2e}
+.fhero h2{font-size:23px}.fhero p{font-weight:700;margin:6px 0 14px;max-width:88%}
+.fhero .fbtn{background:#03210f;color:#7df3a8;padding:13px 22px;border-radius:99px;font-weight:800}
+.av{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;font-size:15px;font-weight:800;flex:none;color:#fff}
 @media(prefers-reduced-motion:reduce){*{animation:none!important}}
 </style>
 </head>
@@ -161,8 +166,8 @@ const PH={
 "Bugatti La Voiture Noire":"https://thumb.wikimedia.org/wikipedia/commons/thumb/b/b2/Bugatti_La_Voiture_Noire%2C_GIMS_2019%2C_Le_Grand-Saconnex_%28GIMS0950%29.jpg/500px-Bugatti_La_Voiture_Noire%2C_GIMS_2019%2C_Le_Grand-Saconnex_%28GIMS0950%29.jpg"
 };
 const PRE={d:{},run(ci){CARS[ci].forEach(([n])=>{const u=PH[n];if(u&&!PRE.d[u]){PRE.d[u]=1;const i=new Image();i.src=u}})}};
-const phH=(n,t,c)=>`<span class="ph${c?' '+c:''}"><i>${T[t].e}</i>${PH[n]?`<img loading="lazy" src="${PH[n]}" alt="" onerror="this.remove()">`:''}</span>`;
-let S={ok:false,bal:0,cars:[],opened:0,best:0,lw:0,ld:0,luck:1,off:0,admin:false},V={tab:'play',cs:0,n:1,drop:null,busy:false,wait:false,sheet:null,strip:null,err:'',news:[],mk:{sub:'show',tier:-1,q:'',sort:'new',lots:[],mine:[],deals:[]}};
+const phH=(n,t,c)=>`<span class="ph${c?' '+c:''}"><i>${T[t].e}</i>${PH[n]?`<img${c=='sm'?' loading="lazy"':''} src="${PH[n]}" alt="" onerror="this.remove()">`:''}</span>`;
+let S={ok:false,id:0,bot:'',bal:0,cars:[],opened:0,best:0,lw:0,ld:0,luck:1,off:0,admin:false},V={tab:'play',cs:0,n:1,drop:null,busy:false,wait:false,sheet:null,strip:null,err:'',news:[],fr:null,mk:{sub:'show',tier:-1,q:'',sort:'new',lots:[],mine:[],deals:[]}};
 const now=()=>Date.now()+(S.off||0);
 function applyState(j){S={...S,...j,off:j.now-Date.now(),ok:true};delete S.drops;if(V.drop&&!V.drop.sold&&!S.cars.some(x=>x.id==V.drop.id))V.drop.sold=true}
 async function api(a,extra){try{const r=await fetch(API,{method:'POST',headers:{'content-type':'application/json','x-init':tg?tg.initData:''},body:JSON.stringify({a,...(extra||{})})});const j=await r.json();if(!j.ok){toast(j.m||'Ошибка');hap('heavy');return null}if(j.cars)applyState(j);return j}catch(e){toast('Нет связи с сервером');return null}}
@@ -198,7 +203,7 @@ function render(){
  const lv=1+Math.floor(S.opened/10),p=(S.opened%10)*10;
  $('#top').innerHTML=topH();
  $('#nav').innerHTML=TABS.map(([k,l])=>`<button class="${V.tab==k?'on':''}" data-a="tab" data-t="${k}"><svg viewBox="0 0 24 24">${IC[k]}</svg>${l}</button>`).join('');
- $('#main').innerHTML=({play:playV,garage:garageV,market:marketV,friends:()=>soon('👥','Друзья','Приглашай друзей и получай награды. Скоро.'),more:moreV})[V.tab]();
+ $('#main').innerHTML=({play:playV,garage:garageV,market:marketV,friends:friendsV,more:moreV})[V.tab]();
  $('#layer').innerHTML=V.sheet?`<div class="ov" data-a="close"></div><div class="sheet">${sheetV()}</div>`:'';
 }
 function soon(i,t,d){return`<div class="empty"><i>${i}</i><h1>${t}</h1>${d}</div>`}
@@ -219,10 +224,22 @@ function garageV(){const cs=S.cars;
  const rows=Object.values(g).sort((a,b)=>b.v-a.v).map(c=>`<div>${phH(c.n,c.t,'sm')}<div class="n" style="color:${T[c.t].c}">${c.n}${c.k>1?' ×'+c.k:''}<small>${fmt(c.v)}</small></div><button class="mini" data-a="sellone" data-n="${c.n}">Продать</button><button class="mini" data-a="listsheet" data-n="${c.n}">Рынок</button></div>`).join('');
  let b='';for(let t=0;t<6;t++){const a=cs.filter(c=>c.t==t);if(a.length)b+=`<button class="btn" data-a="sellt" data-t="${t}"><span style="color:${T[t].c}">${T[t].n}</span> ×${a.length} · ${fmt(sum(a))}</button>`}
  return`<h1>Гараж · ${cs.length} шт.</h1><div class="card list">${rows}</div>${b}<button class="btn y" data-a="sella">Продать всё · ${fmt(sum(cs))}</button>`}
+const hue=s=>[...String(s)].reduce((a,c)=>a+c.charCodeAt(0),0)%360;
+const refLink=()=>S.bot&&S.id?`https://t.me/${S.bot}?startapp=ref_${S.id}`:'';
+async function loadFr(){const j=await api('friends');if(!j)return;V.fr={count:j.count||0,active:j.active||0,earned:j.earned||0,pct:j.pct||5,min:j.min||5,list:j.list||[],ms:j.ms||[]};if(j.bot)S.bot=j.bot;if(j.id)S.id=j.id}
+function friendsV(){const f=V.fr;
+ const hero=`<div class="fhero"><h2>Друзья</h2><p>Зови друзей и получай <b>${f?f.pct:5}%</b> с каждой их продажи машин — навсегда</p><button class="fbtn" data-a="refshare">Пригласить друга</button></div>`;
+ if(!f)return`<h1>Друзья</h1>${hero}<div class="empty"><i>⏳</i>Загружаем…</div>`;
+ const st=`<div class="row" style="gap:10px;margin-bottom:10px"><div class="card" style="flex:1;margin:0;text-align:center"><div class="mut">Друзей</div><h3 style="font-size:22px">${f.count}</h3><div class="mut" style="font-size:12px">активных ${f.active}</div></div><div class="card" style="flex:1;margin:0;text-align:center"><div class="mut">С друзей</div><h3 style="font-size:22px;color:var(--acc)">${short(f.earned)}</h3><div class="mut" style="font-size:12px">за всё время</div></div></div>`;
+ const link=refLink();
+ const box=link?`<div class="card" style="padding:10px"><div class="mut" style="margin-bottom:6px">Твоя ссылка</div><input class="inp" readonly value="${link}" style="margin:0;font-size:13px" onfocus="this.select()"><button class="btn" style="margin-top:8px" data-a="refcopy">Скопировать ссылку</button></div>`:'<div class="card mut">Ссылка появится, когда профиль загрузится.</div>';
+ const ms=f.ms.map(m=>`<div class="card row sp" style="margin-bottom:8px;padding:12px"><div><div>${m.label}</div><div class="mut" style="font-size:12px">${m.need} ${m.need==1?'друг':'друзей'} · от ${f.min} открытий у каждого</div></div>${m.claimed?'<span class="mut">получено</span>':m.ok?`<button class="mini" style="background:var(--acc);color:#04210d" data-a="refclaim" data-i="${m.i}">Забрать</button>`:`<span class="mut">${Math.min(f.active,m.need)}/${m.need}</span>`}</div>`).join('');
+ const list=f.list.length?`<div class="sec">ТВОИ ДРУЗЬЯ</div><div class="card list">${f.list.map(x=>`<div><span class="av" style="background:hsl(${hue(x.n)} 42% 28%)">${esc(x.n.slice(0,1).toUpperCase())}</span><div class="n">${esc(x.n)}<small>Ур. ${x.lvl} · открыл ${x.opened}</small></div><b style="color:var(--acc)">+${short(x.earned)}</b></div>`).join('')}</div>`:'<div class="empty" style="padding:34px 20px"><i>👥</i>Пока никого. Скинь ссылку — за каждого друга бонус.</div>';
+ return`<h1>Друзья</h1>${hero}${st}${box}<div class="sec">НАГРАДЫ</div>${ms}${list}`}
 function moreV(){const lv=1+Math.floor(S.opened/10),w=Math.max(0,60-(now()-S.lw)/1000),dl=Math.max(0,864e5-(now()-S.ld));
  return`<div class="card row"><div class="ring" style="--p:${(S.opened%10)*10}%"><b>${lv}</b></div><div style="flex:1"><h3>Уровень ${lv}</h3><div class="mut">открыто кейсов: ${S.opened}</div></div><div style="text-align:right"><div class="mut">Баланс</div><h3>${short(S.bal)}</h3></div></div>
  <button class="card row sp" style="width:100%;text-align:left" data-a="sheet" data-s="news"><div><h3>📰 Новости</h3><div class="mut">${V.news.length?esc(V.news[0].title):'пока пусто'}</div></div>${unread()?'<span class="dot"></span>':''}</button>
- <div class="grid4"><button class="tile" data-a="tab" data-t="garage"><span style="background:#30d85f">🏠</span>Гараж</button><button class="tile" data-a="work"><span style="background:#ff9f0a">🔨</span>Работа</button><button class="tile" data-a="daily"><span style="background:#ff375f">🎁</span>Бонус</button><button class="tile" data-a="top"><span style="background:#5e5ce6">🏆</span>Рейтинг</button><button class="tile" data-a="sheet" data-s="promo"><span style="background:#0a84ff">🎟</span>Промокод</button>${S.admin?'<button class="tile" data-a="sheet" data-s="adm"><span style="background:#8e8e93">🛠</span>Админка</button>':''}</div>
+ <div class="grid4"><button class="tile" data-a="tab" data-t="garage"><span style="background:#30d85f">🏠</span>Гараж</button><button class="tile" data-a="tab" data-t="friends"><span style="background:#25d366">👥</span>Друзья</button><button class="tile" data-a="work"><span style="background:#ff9f0a">🔨</span>Работа</button><button class="tile" data-a="daily"><span style="background:#ff375f">🎁</span>Бонус</button><button class="tile" data-a="top"><span style="background:#5e5ce6">🏆</span>Рейтинг</button><button class="tile" data-a="sheet" data-s="promo"><span style="background:#0a84ff">🎟</span>Промокод</button>${S.admin?'<button class="tile" data-a="sheet" data-s="adm"><span style="background:#8e8e93">🛠</span>Админка</button>':''}</div>
  <div class="shopc"><h2>Магазин</h2><p>Донат, наборы и усиления за ⭐</p><button class="open" data-a="sheet" data-s="shop">Открыть</button><div class="tags"><span>👑 VIP</span><span>🍀 Удача</span><span>📦 Кейсы</span><span>💰 Рубли</span></div></div>
  <div class="sec">СЕЙЧАС</div>
  <button class="card row sp" style="width:100%;text-align:left" data-a="daily"><div><h3>🎁 Ежедневный бонус</h3><div class="mut">${dl>0?'через '+Math.floor(dl/36e5)+' ч '+Math.floor(dl%36e5/6e4)+' мин':'можно забрать: '+fmt(20000)}</div></div></button>
@@ -253,7 +270,7 @@ async function spin(){if(V.busy||V.wait)return;const c=CASES[V.cs],n=V.n,cost=c.
 
 document.addEventListener('click',async e=>{const b=e.target.closest('[data-a]');if(!b)return;const a=b.dataset.a,D=b.dataset;
  if(V.busy&&a!='close')return;
- if(a=='tab'){V.tab=D.t;V.sheet=null;if(D.t=='market'){render();await loadMk()}}
+ if(a=='tab'){V.tab=D.t;V.sheet=null;if(D.t=='market'){render();await loadMk()}else if(D.t=='friends'){V.fr=null;render();await loadFr();render()}}
  else if(a=='cs')V.cs=+D.i;
  else if(a=='mode')V.n=+D.n;
  else if(a=='spin'){spin();return}
@@ -273,6 +290,9 @@ document.addEventListener('click',async e=>{const b=e.target.closest('[data-a]')
  else if(a=='top'){const j=await api('top');if(!j)return;V.sheet={t:'top',rows:j.top}}
  else if(a=='buy'){const j=await api('invoice',{item:D.i});if(j&&tg&&tg.openInvoice)tg.openInvoice(j.url,async st=>{if(st=='paid'){toast('✅ Оплачено!');await api('state');render()}});return}
  else if(a=='promoGo'){const j=await api('promo',{code:($('#p_code')||{}).value||''});if(!j)return;toast('🎁 +'+fmt(j.gain)+(j.luck>1?' и удача '+j.luck+'× на '+j.hours+' ч':''));V.sheet=null}
+ else if(a=='refshare'){const l=refLink();if(!l){toast('Ссылка появится после загрузки профиля');return}const u='https://t.me/share/url?url='+encodeURIComponent(l)+'&text='+encodeURIComponent('Залетай в Автокейс — крутим кейсы с тачками!');if(tg&&tg.openTelegramLink)tg.openTelegramLink(u);else toast(l)}
+ else if(a=='refcopy'){const l=refLink();if(!l)return;try{navigator.clipboard.writeText(l).then(()=>toast('Ссылка скопирована'),()=>toast(l))}catch(e){toast(l)}}
+ else if(a=='refclaim'){const j=await api('refclaim',{i:+D.i});if(!j)return;toast('🎁 '+j.label);hap('medium');V.fr=null;render();await loadFr()}
  else if(a=='adm'){const v=id=>($('#'+id)||{}).value||'';let body={op:D.op,target:v('a_id'),amount:v('a_amt')};
   if(D.op=='luck'){body.mult=parseFloat((v('a_pluck')||'10').replace(',','.'));body.hours=parseFloat((v('a_phours')||'2').replace(',','.'))}
   if(D.op=='ban1'||D.op=='ban0'){body.op='ban';body.on=D.op=='ban1'}
