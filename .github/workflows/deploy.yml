@@ -12,5 +12,5 @@ jobs:
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          command: deploy worker.js --name autocase-api --compatibility-date=2026-10-23
-          
+          # без указания файла: wrangler берёт wrangler.json (main=worker.js + привязка D1 DB)
+          command: deploy
