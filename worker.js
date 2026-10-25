@@ -236,20 +236,17 @@ async function handle(a, uid, u, env) {
     }
 
     case 'daily': {
-      const now = Date.now();
-      const dk = dayKey();
-      let str = u.dstr || 0, dl = u.dlast || 0;
-      if (dl === dk) return err('cd', 'Бонус уже забран');
-      // стрик: если вчера — +1, иначе сброс на 1
-      const prev = dl ? new Date(Math.floor(dl/10000), Math.floor((dl%10000)/100)-1, dl%100) : null;
-      const nd = new Date(now);
-      const yk = nd.getFullYear()*10000 + (nd.getMonth())*100 + nd.getDate(); // вчера
-      if (prev && prev.getFullYear()===Math.floor(yk/10000) && (prev.getMonth()+1)===Math.floor((yk%10000)/100) && prev.getDate()===yk%100) str += 1; else str = 1;
-      const mult = 1 + Math.min(6, str-1)*0.1; // +10% за каждый день подряд, макс +60%
-      const gain = Math.round(DAILY_BONUS * mult);
-      const r = await DB.prepare('UPDATE users SET bal=bal+?,ld=?,dstr=?,dlast=? WHERE id=? AND (dlast IS NULL OR dlast<?)').bind(gain, now, str, dk, uid, dk).run();
-      if (!r.meta.changes) return err('cd', 'Бонус уже забран');
-      return json({ ...(await st()), gain, str });
+      const now = Date.now(), dk = dayKey();
+      // вчера = сегодняшний ключ минус 1 день (через дату)
+      const yd = new Date(); yd.setDate(yd.getDate() - 1);
+      const yk = yd.getFullYear() * 10000 + (yd.getMonth() + 1) * 100 + yd.getDate();
+      const upd = await DB.prepare('UPDATE users SET bal=bal+?1,ld=?2,dstr=CASE WHEN dlast=?4 THEN dstr+1 ELSE 1 END,dlast=?3 WHERE id=?5 AND ld<=?2').bind(DAILY_BONUS, now, dk, yk, uid, now - DAILY_CD).run();
+      if (!upd.meta.changes) return err('cd', 'Бонус уже забран');
+      const uu = await DB.prepare('SELECT dstr FROM users WHERE id=?').bind(uid).first();
+      const str = Math.max(1, (uu && uu.dstr) || 1);
+      const mult = 1 + Math.min(6, str - 1) * 0.1; // +10% за каждый день подряд, макс +60%
+      if (mult > 1) await DB.prepare('UPDATE users SET bal=bal+? WHERE id=?').bind(DAILY_BONUS * (mult - 1), uid).run();
+      return json({ ...(await st()), gain: Math.round(DAILY_BONUS * mult), str });
     }
 
     case 'top': {
@@ -412,7 +409,7 @@ async function handle(a, uid, u, env) {
       const out = [];
       for (let i = 0; i < qs.length; i++) {
         const q = qs[i];
-        await env.DB.prepare('INSERT OR IGNORE INTO quests(uid,key,done,claimed,day) VALUES(?,?,?,?,0)').bind(uid, q.id, 0, 0, dk).run();
+        await env.DB.prepare('INSERT OR IGNORE INTO quests(uid,key,done,claimed,day) VALUES(?,?,?,?,?)').bind(uid, q.id, 0, 0, dk).run();
         const row = await env.DB.prepare('SELECT done,claimed FROM quests WHERE uid=? AND key=? AND day=?').bind(uid, q.id, dk).first();
         out.push({ id: q.id, txt: q.txt, need: q.need, done: Math.min(q.need, (row && row.done) || 0), claimed: (row && row.claimed) ? 1 : 0, rub: q.rub });
       }
