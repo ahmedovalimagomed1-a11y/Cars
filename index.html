@@ -105,7 +105,8 @@ textarea.inp{min-height:90px;resize:vertical}
 .updisc{position:absolute;inset:26px;border-radius:50%;background:var(--c1);display:grid;place-items:center;text-align:center}
 .updisc b{font-size:32px}.updisc small{color:var(--mut);display:block;font-size:12px}
 .upneed{position:absolute;inset:0;z-index:2}
-.upneed i{position:absolute;left:16px;top:50%;width:0;height:0;border:7px solid transparent;border-left:16px solid #ffd84a;transform:translateY(-50%);filter:drop-shadow(0 0 7px rgba(255,201,40,.55))}
+.upneed i{position:absolute;left:10px;top:50%;height:4px;width:30px;border-radius:3px;background:linear-gradient(90deg,#ff7a35,#ffd84a);transform:translateY(-50%);filter:drop-shadow(0 0 7px rgba(255,150,40,.55))}
+.upneed i:after{content:"";position:absolute;right:-10px;top:50%;transform:translateY(-50%);width:0;height:0;border:7px solid transparent;border-left:13px solid #ffd84a}
 .uppick .list>div{cursor:pointer}
 .demo{background:var(--c1);border-radius:14px;padding:8px 12px;font-size:12px;color:var(--mut);text-align:center;margin-bottom:8px}
 </style>
@@ -291,10 +292,10 @@ async function upgo(){const u=V.up;if(!u||u.busy||!u.car)return;const ch=(UPGC.f
   else{res={win:false,v:old.v};S.cars=S.cars.filter(x=>x.id!=old.id)}}
  else{const j=await api('upgrade',{carId:u.car.id,m:u.m});if(!j){u.busy=false;render();return}res=j.up}
  const arc=ch*3.6,pad=8,ang=win0(res,arc,pad);
- u.angPrev=u.ang||0;u.ang=u.angPrev-Math.floor(u.angPrev/360)*360+6*360+ang;u.res=res;u.busy=false;
+ u.angPrev=u.ang||0;u.ang=u.angPrev-Math.floor(u.angPrev/360)*360+5*360+ang;u.res=res;u.busy=false;
  render();const nd=$('#upneed');
- if(nd){nd.style.transition='none';nd.getBoundingClientRect();nd.style.transition='transform 3.4s cubic-bezier(.2,.65,.1,1)';nd.style.transform=`rotate(${u.ang}deg)`}
- hap();await wait(3600);u.anim=false;hap('heavy');render()}
+ if(nd){nd.style.transition='none';nd.getBoundingClientRect();nd.style.transition='transform 2.8s cubic-bezier(.3,.7,.2,1)';nd.style.transform=`rotate(${u.ang}deg)`}
+ hap();await wait(3050);u.anim=false;hap('heavy');render()}
 function win0(res,arc,pad){return res.win?90+pad+Math.random()*Math.max(1,arc-2*pad):90+arc+pad+Math.random()*Math.max(1,360-arc-2*pad)}
 
 function sheetV(){const s=V.sheet;
