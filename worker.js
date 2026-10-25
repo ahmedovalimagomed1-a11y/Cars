@@ -175,7 +175,7 @@ async function handle(a, uid, u, env) {
       if (!c) return err('bad');
       const cnt = (await DB.prepare('SELECT COUNT(*) c FROM cars WHERE uid=?').bind(uid).first()).c;
       if (cnt + n > GARAGE_CAP) return err('full', `Гараж полон (${GARAGE_CAP}). Продай машины.`);
-      const r = await DB.prepare('UPDATE users SET bal=bal-?1,opened=opened+?2 WHERE id=?3 AND bal>=?1').bind(c.p * n, n, uid).run();
+      const r = await DB.prepare('UPDATE users SET bal=bal-?,opened=opened+? WHERE id=? AND bal>=?').bind(c.p * n, n, uid, c.p * n).run();
       if (!r.meta.changes) return err('funds', 'Не хватает денег');
       const luck = u.luck_until > Date.now() ? u.luck : 1;
       const drops = Array.from({ length: n }, () => roll(ci, luck));
@@ -236,17 +236,19 @@ async function handle(a, uid, u, env) {
     }
 
     case 'daily': {
-      const now = Date.now(), dk = dayKey();
-      // вчера = сегодняшний ключ минус 1 день (через дату)
-      const yd = new Date(); yd.setDate(yd.getDate() - 1);
+      const now = Date.now();
+      const cur = await DB.prepare('SELECT ld,dstr,dlast FROM users WHERE id=?').bind(uid).first();
+      if ((cur && cur.ld || 0) > now - DAILY_CD) return err('cd', 'Бонус уже забран');
+      const dk = dayKey();
+      const yd = new Date(now - 86400000);
       const yk = yd.getFullYear() * 10000 + (yd.getMonth() + 1) * 100 + yd.getDate();
-      const upd = await DB.prepare('UPDATE users SET bal=bal+?1,ld=?2,dstr=CASE WHEN dlast=?4 THEN dstr+1 ELSE 1 END,dlast=?3 WHERE id=?5 AND ld<=?2').bind(DAILY_BONUS, now, dk, yk, uid, now - DAILY_CD).run();
-      if (!upd.meta.changes) return err('cd', 'Бонус уже забран');
-      const uu = await DB.prepare('SELECT dstr FROM users WHERE id=?').bind(uid).first();
-      const str = Math.max(1, (uu && uu.dstr) || 1);
+      const prev = (cur && cur.dlast) || 0;
+      const str = prev === yk ? Math.max(1, (cur.dstr || 0) + 1) : 1;
       const mult = 1 + Math.min(6, str - 1) * 0.1; // +10% за каждый день подряд, макс +60%
-      if (mult > 1) await DB.prepare('UPDATE users SET bal=bal+? WHERE id=?').bind(DAILY_BONUS * (mult - 1), uid).run();
-      return json({ ...(await st()), gain: Math.round(DAILY_BONUS * mult), str });
+      const gain = Math.round(DAILY_BONUS * mult);
+      const upd = await DB.prepare('UPDATE users SET bal=bal+?,ld=?,dstr=?,dlast=? WHERE id=? AND ld<=?').bind(gain, now, str, dk, uid, now - DAILY_CD).run();
+      if (!upd.meta.changes) return err('cd', 'Бонус уже забран');
+      return json({ ...(await st()), gain, str });
     }
 
     case 'top': {
@@ -284,7 +286,7 @@ async function handle(a, uid, u, env) {
       const tier = Number.isInteger(a.tier) ? a.tier : -1;
       const q = '%' + String(a.q || '').trim().slice(0, 30).replace(/[%_]/g, '') + '%';
       const order = a.sort === 'cheap' ? 'price ASC' : a.sort === 'exp' ? 'price DESC' : 'id DESC';
-      const rows = (await DB.prepare(`SELECT id,seller,seller_name n,car_name c,tier t,value v,price p FROM lots WHERE (?1<0 OR tier=?1) AND car_name LIKE ?2 ORDER BY ${order} LIMIT 40`).bind(tier, q).all()).results;
+      const rows = (await DB.prepare(`SELECT id,seller,seller_name n,car_name c,tier t,value v,price p FROM lots WHERE (?<0 OR tier=?) AND car_name LIKE ? ORDER BY ${order} LIMIT 40`).bind(tier, tier, q).all()).results;
       return json({ ok: true, lots: rows.map((r) => ({ id: r.id, n: r.n, c: r.c, t: r.t, v: r.v, p: r.p, mine: r.seller === uid })) });
     }
 
@@ -294,7 +296,7 @@ async function handle(a, uid, u, env) {
     }
 
     case 'deals': {
-      const rows = (await DB.prepare('SELECT car_name c,tier t,price p,fee,buyer,ts FROM deals WHERE buyer=?1 OR seller=?1 ORDER BY id DESC LIMIT 30').bind(uid).all()).results;
+      const rows = (await DB.prepare('SELECT car_name c,tier t,price p,fee,buyer,ts FROM deals WHERE buyer=? OR seller=? ORDER BY id DESC LIMIT 30').bind(uid, uid).all()).results;
       return json({ ok: true, deals: rows.map((r) => ({ c: r.c, t: r.t, p: r.p, fee: r.fee, ts: r.ts, role: r.buyer === uid ? 'buy' : 'sell' })) });
     }
 
@@ -319,7 +321,7 @@ async function handle(a, uid, u, env) {
       if (lot.seller === uid) return err('own', 'Это твой лот');
       const cnt = (await DB.prepare('SELECT COUNT(*) c FROM cars WHERE uid=?').bind(uid).first()).c;
       if (cnt >= GARAGE_CAP) return err('full', `Гараж полон (${GARAGE_CAP}). Продай машины.`);
-      const pay = await DB.prepare('UPDATE users SET bal=bal-?1 WHERE id=?2 AND bal>=?1').bind(lot.price, uid).run();
+      const pay = await DB.prepare('UPDATE users SET bal=bal-? WHERE id=? AND bal>=?').bind(lot.price, uid, lot.price).run();
       if (!pay.meta.changes) return err('funds', 'Не хватает денег');
       const claim = await DB.prepare('DELETE FROM lots WHERE id=? RETURNING seller,car_name,tier,value,price').bind(id).all();
       if (!claim.results.length) {
