@@ -438,13 +438,15 @@ async function webhook(req, env) {
 async function ensure(DB, u, startParam) {
   const created = await DB.prepare('INSERT OR IGNORE INTO users(id,name,bal,created) VALUES(?,?,?,?)').bind(u.id, u.first_name || 'Игрок', START, Date.now()).run();
   const ref = Number((/^ref_(\d+)$/.exec(String(startParam || '')) || [])[1] || 0);
-  // привязка только для новых игроков, чтобы старым нельзя было «приписать» чужого реферера
-  if (created.meta.changes && ref && ref !== u.id) {
-    const inv = await DB.prepare('SELECT id FROM users WHERE id=?').bind(ref).first();
-    if (inv) {
-      await DB.prepare('INSERT OR IGNORE INTO refs(uid,ref,ts) VALUES(?,?,?)').bind(u.id, ref, Date.now()).run();
-      await DB.prepare('UPDATE users SET bal=bal+? WHERE id=?').bind(REF_FRIEND_BONUS, u.id).run();
-    }
+  if (!(ref && ref !== u.id)) return;
+  const hasRef = await DB.prepare('SELECT uid FROM refs WHERE uid=?').bind(u.id).first();
+  if (hasRef) return;
+  const inv = await DB.prepare('SELECT id FROM users WHERE id=?').bind(ref).first();
+  if (!inv) return;
+  await DB.prepare('INSERT OR IGNORE INTO refs(uid,ref,ts) VALUES(?,?,?)').bind(u.id, ref, Date.now()).run();
+  // бонус за друга по ссылке — только новому игроку
+  if (created.meta.changes) {
+    await DB.prepare('UPDATE users SET bal=bal+? WHERE id=?').bind(REF_FRIEND_BONUS, u.id).run();
   }
 }
 
