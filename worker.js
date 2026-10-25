@@ -162,6 +162,8 @@ async function payRef(DB, uid, sum) {
   ]);
 }
 
+const dayKey = () => { const d = new Date(); return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate(); };
+function pickQs(){const a=[...QLIST];for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a.slice(0,3)}
 async function handle(a, uid, u, env) {
   const DB = env.DB, isAdmin = ADMIN_IDS.includes(uid) || uid === Number(env.ADMIN_ID);
   const st = () => state(DB, uid, isAdmin);
