@@ -99,12 +99,11 @@ textarea.inp{min-height:90px;resize:vertical}
 .upcar{background:var(--c1);border-radius:18px;padding:12px;text-align:center;border:2px solid color-mix(in srgb,var(--c) 55%,transparent);box-shadow:0 0 22px color-mix(in srgb,var(--c) 25%,transparent)}
 .upcar h4{font-size:14px;margin:8px 0 2px;line-height:1.2}
 .upcar .pv{color:var(--mut);font-size:13px}
-.upw{position:relative;width:238px;height:238px;margin:10px auto}
-.uprot{position:absolute;inset:0;border-radius:50%;will-change:transform}
-.upwave{position:absolute;inset:0;border-radius:50%;background:conic-gradient(var(--acc) calc(var(--p)*1%),var(--c3) 0);-webkit-mask:radial-gradient(circle,transparent 58%,#000 59%);mask:radial-gradient(circle,transparent 58%,#000 59%)}
-.updisc{position:absolute;inset:28px;border-radius:50%;background:radial-gradient(circle at 50% 40%,#26262b,#17171a);display:grid;place-items:center;text-align:center;box-shadow:inset 0 0 40px #000}
-.updisc b{font-size:34px}.updisc small{color:var(--mut);display:block;font-size:12px}
-.uptr{position:absolute;left:4px;top:50%;width:0;height:0;border:9px solid transparent;border-left:18px solid #ffd84a;transform:translateY(-50%);filter:drop-shadow(0 0 8px rgba(255,200,40,.45));z-index:3}
+.upbar{position:relative;margin:18px 12px 10px;height:38px;border-radius:99px;background:linear-gradient(90deg,#30d85f 0 var(--pw),#3a3a40 var(--pw));box-shadow:inset 0 2px 10px #000,0 0 0 2px #000}
+.upbar:before{content:"";position:absolute;left:var(--pw);top:50%;transform:translateY(-50%);width:2px;height:18px;background:#fff;opacity:.7}
+.upind{position:absolute;top:-6px;bottom:-6px;width:6px;margin-left:-3px;background:#fff;border-radius:4px;box-shadow:0 0 16px #fff;will-change:left}
+.upbarv{display:flex;align-items:center;justify-content:space-between;margin:8px 18px 4px;color:var(--mut);font-size:12px}
+.upbarv b{color:#30d85f}.upbarv s{text-decoration:none;color:#ff453a}
 .uppick .list>div{cursor:pointer}
 .demo{background:var(--c1);border-radius:14px;padding:8px 12px;font-size:12px;color:var(--mut);text-align:center;margin-bottom:8px}
 </style>
@@ -184,7 +183,7 @@ const PH={
 };
 const PRE={d:{},run(ci){CARS[ci].forEach(([n])=>{const u=PH[n];if(u&&!PRE.d[u]){PRE.d[u]=1;const i=new Image();i.src=u}})}};
 const phH=(n,t,c)=>`<span class="ph${c?' '+c:''}"><i>${T[t].e}</i>${PH[n]?`<img${c=='sm'?' loading="lazy"':''} src="${PH[n]}" alt="" onerror="this.remove()">`:''}</span>`;
-let S={ok:false,id:0,bot:'',bal:0,cars:[],opened:0,best:0,lw:0,ld:0,luck:1,off:0,admin:false},V={tab:'play',us:'cases',cs:0,n:1,drop:null,busy:false,wait:false,sheet:null,strip:null,err:'',news:[],fr:null,mk:{sub:'show',tier:-1,q:'',sort:'new',lots:[],mine:[],deals:[]},up:{car:null,m:2,busy:false,res:null,ang:0,angPrev:0}};
+let S={ok:false,id:0,bot:'',bal:0,cars:[],opened:0,best:0,lw:0,ld:0,luck:1,off:0,admin:false},V={tab:'play',us:'cases',cs:0,n:1,drop:null,busy:false,wait:false,sheet:null,strip:null,err:'',news:[],fr:null,mk:{sub:'show',tier:-1,q:'',sort:'new',lots:[],mine:[],deals:[]},up:{car:null,m:2,busy:false,res:null,upos:50,uposPrev:50,anim:false}};
 let DEMO=false,demoId=900000;
 const now=()=>Date.now()+(S.off||0);
 function applyState(j){S={...S,...j,off:j.now-Date.now(),ok:true};delete S.drops;if(V.drop&&!V.drop.sold&&!S.cars.some(x=>x.id==V.drop.id))V.drop.sold=true}
@@ -269,14 +268,11 @@ function moreV(){const lv=1+Math.floor(S.opened/10),w=Math.max(0,60-(now()-S.lw)
  <div class="card list"><div><div class="n">Лучший дроп<small>${S.best?fmt(S.best):'—'}</small></div></div><div><div class="n">Машин в гараже<small>${S.cars.length} шт. на ${fmt(sum(S.cars))}</small></div></div></div>`}
 function upV(){const u=V.up,ch=(UPGC.find(x=>x[0]==u.m)||[])[1]||50;
  if(u.res&&!u.anim)return resH();
- if(!u.car)return`<div class="empty" style="padding:26px 16px 8px"><i>⚡</i><h1 style="margin:2px 0 8px">Апгрейдер</h1><div class="mut">Поставь машину из гаража и попытайся умножить её ×2, ×5 или ×10. Не повезло — машина сгорает.</div></div>`+pickH();
- const nv=u.car.v*u.m,t=tierF(nv),cs=CARS[t],tgt=cs[(u.car.id*7+u.m*13)%cs.length];
- return`<div class="upgrid">
- <div class="upcar" ${col(u.car.t)}>${phH(u.car.n,u.car.t)}<h4>${esc(u.car.n)}</h4><div class="pv">${fmt(u.car.v)}</div><button class="mini" style="margin-top:8px" data-a="upreset">Заменить</button></div>
- <div class="upcar" ${col(t)}>${phH(tgt[0],t)}<h4 style="color:${T[t].c}">${esc(tgt[0])}</h4><div class="pv">${fmt(nv)}</div><span class="mut" style="font-size:11px">если повезёт</span></div></div>
- <div class="upw" style="--p:${ch}"><div class="upwave"></div><div class="uprot" id="uprot" style="transform:rotate(${u.res&&!u.anim?u.ang:(u.angPrev||0)}deg)"><div class="uptr"></div></div><div class="updisc"><div><b>${ch}%</b><small>шанс</small></div></div></div>
- <div class="modes">${UPGC.map(x=>`<button class="chip ${u.m==x[0]?'on':''}" data-a="upm" data-m="${x[0]}">×${x[0]} · ${x[1]}%</button>`).join('')}</div>
- <div class="cta"><button class="go" data-a="upgo" ${u.busy?'disabled':''}>⚡ Апгрейд ×${u.m}<em>${fmt(u.car.v)} → ${fmt(nv)}</em></button></div>`}
+ if(!u.car)return '<div class="empty" style="padding:26px 16px 8px"><i>⚡</i><h1 style="margin:2px 0 8px">Апгрейдер</h1><div class="mut">Поставь машину из гаража и попытайся умножить её ×2, ×5 или ×10. Не повезло — машина сгорает.</div></div>'+pickH();
+ const nv=u.car.v*u.m,t=tierF(nv),cs=CARS[t],tgt=cs[(u.car.id*7+u.m*13)%cs.length];const st=u.res?u.upos:(u.uposPrev||50);
+ const p='<button class="go" data-a="upgo" '+(u.busy?'disabled':'')+'>⚡ Апгрейд ×'+u.m+'<em>'+fmt(u.car.v)+' → '+fmt(nv)+'</em></button>';
+ const mm=UPGC.map(function(x){return '<button class="chip '+(u.m==x[0]?'on':'')+'" data-a="upm" data-m="'+x[0]+'">×'+x[0]+' · '+x[1]+'%</button>';}).join('');
+ return '<div class="upgrid"><div class="upcar" '+col(u.car.t)+'>'+phH(u.car.n,u.car.t)+'<h4>'+esc(u.car.n)+'</h4><div class="pv">'+fmt(u.car.v)+'</div><button class="mini" style="margin-top:8px" data-a="upreset">Заменить</button></div><div class="upcar" '+col(t)+'>'+phH(tgt[0],t)+'<h4 style="color:'+T[t].c+'">'+esc(tgt[0])+'</h4><div class="pv">'+fmt(nv)+'</div><span class="mut" style="font-size:11px">если повезёт</span></div></div><div class="upbar" style="--pw:'+ch+'%"><div class="upind" id="upind" style="left:'+st+'%"></div></div><div class="upbarv"><b>'+ch+'% ШАНС</b><span>×'+u.m+'</span><s>'+(100-ch)+'% РИСК</s></div><div class="modes">'+mm+'</div><div class="cta">'+p+'</div>';}
 function pickH(){const cs=[...S.cars].sort((a,b)=>b.v-a.v).slice(0,80);
  return'<div class="sec" style="margin-top:14px">ВЫБЕРИ МАШИНУ ИЗ ГАРАЖА</div>'+(cs.length?`<div class="card list uppick">${cs.map(c=>`<button style="display:flex;align-items:center;gap:12px;width:100%;padding:12px 4px;border-bottom:1px solid var(--c2);text-align:left" data-a="upcar" data-id="${c.id}">${phH(c.n,c.t,'sm')}<div class="n" style="color:${T[c.t].c};flex:1">${esc(c.n)}<small>${fmt(c.v)}</small></div><b class="mut">›</b></button>`).join('')}</div>`:'<div class="empty"><i>🅿️</i>В гараже пусто — сначала открой кейс.</div>')}
 function resH(){const u=V.up,r=u.res;
@@ -290,10 +286,10 @@ async function upgo(){const u=V.up;if(!u||u.busy||!u.car)return;const ch=(UPGC.f
   else{res={win:false,v:old.v};S.cars=S.cars.filter(x=>x.id!=old.id)}}
  else{const j=await api('upgrade',{carId:u.car.id,m:u.m});if(!j){u.busy=false;render();return}res=j.up}
  const arc=ch*3.6,pad=18,ang=win0(res,arc,pad);
- u.angPrev=u.ang||0;u.ang=u.angPrev-Math.floor(u.angPrev/360)*360+6*360+ang;u.res=res;u.busy=false;
- render();const nd=$('#uprot');
- if(nd){nd.style.transition='none';nd.getBoundingClientRect();nd.style.transition='transform 2.2s cubic-bezier(.12,.72,.12,1)';nd.style.transform=`rotate(${u.ang}deg)`}
- hap();await wait(2450);u.anim=false;hap('heavy');render()}
+ u.uposPrev=u.upos||50;const wp=res.win;const mn=wp?14:ch+14,mx=wp?ch-14:86;u.upos=mn+Math.random()*Math.max(2,mx-mn);u.res=res;u.busy=false;
+ render();const nd=$('#upind');
+ if(nd){nd.style.transition='none';nd.getBoundingClientRect();nd.style.transition='left 2.3s cubic-bezier(.12,.75,.12,1)';nd.style.left=u.upos+'%'}
+ hap();await wait(2550);u.anim=false;hap('heavy');render()}
 function win0(res,arc,pad){return res.win?90+pad+Math.random()*Math.max(1,arc-2*pad):90+arc+pad+Math.random()*Math.max(1,360-arc-2*pad)}
 
 function sheetV(){const s=V.sheet;
@@ -323,7 +319,7 @@ document.addEventListener('click',async e=>{const b=e.target.closest('[data-a]')
  if(a=='tab'){V.tab=D.t;V.sheet=null;if(D.t=='market'){render();await loadMk()}else if(D.t=='friends'){V.fr=null;render();await loadFr();render()}}
  else if(a=='us'){V.us=D.s;V.up.res=null}
  else if(a=='upcar'){const c=S.cars.find(x=>x.id==+D.id);if(c){V.up.car=c;V.up.res=null;hap()}}
- else if(a=='upm'){V.up.m=UPGC.some(x=>x[0]==+D.m)?+D.m:V.up.m;V.up.res=null;V.up.angPrev=V.up.ang}
+ else if(a=='upm'){V.up.m=UPGC.some(x=>x[0]==+D.m)?+D.m:V.up.m;V.up.res=null;V.up.uposPrev=V.up.upos||50}
  else if(a=='upreset'){V.up.car=null;V.up.res=null}
  else if(a=='upagain'){const r=V.up.res;V.up.car=r.win?{id:r.id,n:r.n,t:r.t,v:r.v}:null;V.up.res=null}
  else if(a=='upgo'){upgo();return}
