@@ -100,7 +100,7 @@ textarea.inp{min-height:90px;resize:vertical}
 .upcar h4{font-size:14px;margin:8px 0 2px;line-height:1.2}
 .upcar .pv{color:var(--mut);font-size:13px}
 .upw{position:relative;width:238px;height:238px;margin:10px auto}
-.uprot{position:absolute;inset:0;border-radius:50%}
+.uprot{position:absolute;inset:0;border-radius:50%;will-change:transform}
 .upwave{position:absolute;inset:0;border-radius:50%;background:conic-gradient(var(--acc) calc(var(--p)*1%),var(--c3) 0);-webkit-mask:radial-gradient(circle,transparent 58%,#000 59%);mask:radial-gradient(circle,transparent 58%,#000 59%)}
 .updisc{position:absolute;inset:28px;border-radius:50%;background:radial-gradient(circle at 50% 40%,#26262b,#17171a);display:grid;place-items:center;text-align:center;box-shadow:inset 0 0 40px #000}
 .updisc b{font-size:34px}.updisc small{color:var(--mut);display:block;font-size:12px}
@@ -289,11 +289,11 @@ async function upgo(){const u=V.up;if(!u||u.busy||!u.car)return;const ch=(UPGC.f
   if(win){const nv=old.v*u.m,t=tierF(nv),cs=CARS[t],c=cs[(old.id*7+u.m*13)%cs.length];res={win:true,id:++demoId,n:c[0],t,v:nv};S.cars=S.cars.filter(x=>x.id!=old.id).concat([{id:res.id,n:res.n,t,v:nv}])}
   else{res={win:false,v:old.v};S.cars=S.cars.filter(x=>x.id!=old.id)}}
  else{const j=await api('upgrade',{carId:u.car.id,m:u.m});if(!j){u.busy=false;render();return}res=j.up}
- const arc=ch*3.6,pad=12,ang=win0(res,arc,pad);
- u.angPrev=u.ang||0;u.ang=u.angPrev-Math.floor(u.angPrev/360)*360+5*360+ang;u.res=res;u.busy=false;
+ const arc=ch*3.6,pad=18,ang=win0(res,arc,pad);
+ u.angPrev=u.ang||0;u.ang=u.angPrev-Math.floor(u.angPrev/360)*360+6*360+ang;u.res=res;u.busy=false;
  render();const nd=$('#uprot');
- if(nd){nd.style.transition='none';nd.getBoundingClientRect();nd.style.transition='transform 3s cubic-bezier(.25,.8,.2,1)';nd.style.transform=`rotate(${u.ang}deg)`}
- hap();await wait(3200);u.anim=false;hap('heavy');render()}
+ if(nd){nd.style.transition='none';nd.getBoundingClientRect();nd.style.transition='transform 2.2s cubic-bezier(.12,.72,.12,1)';nd.style.transform=`rotate(${u.ang}deg)`}
+ hap();await wait(2450);u.anim=false;hap('heavy');render()}
 function win0(res,arc,pad){return res.win?90+pad+Math.random()*Math.max(1,arc-2*pad):90+arc+pad+Math.random()*Math.max(1,360-arc-2*pad)}
 
 function sheetV(){const s=V.sheet;
