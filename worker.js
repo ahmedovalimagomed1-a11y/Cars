@@ -18,6 +18,15 @@ const HELP = `📖 <b>Как играть</b>
 🎟 Промокоды вводятся в «Ещё»
 👥 За друзей — процент с их продаж`;
 const START = 100000, WORK_CD = 60000, DAILY_CD = 86400000, DAILY_BONUS = 20000, GARAGE_CAP = 300;
+// Ежедневные задания
+const QLIST = [
+  { id:'open3', need:3, type:'open', rub:15000, txt:'Открой 3 кейса' },
+  { id:'open5', need:5, type:'open', rub:25000, txt:'Открой 5 кейсов' },
+  { id:'sell2', need:2, type:'sell', rub:12000, txt:'Продай 2 машины' },
+  { id:'sell4', need:4, type:'sell', rub:20000, txt:'Продай 4 машины' },
+  { id:'up1',   need:1, type:'upg', rub:15000, txt:'Сделай 1 апгрейд' },
+  { id:'up2',   need:2, type:'upg', rub:30000, txt:'Сделай 2 апгрейда' },
+];
 // Друзья: % с продаж друга, бонус новичку по ссылке, награды за активных друзей
 const REF_PCT = 0.05, REF_MIN_OPENS = 5, REF_FRIEND_BONUS = 10000;
 const REF_MS = [
@@ -70,9 +79,10 @@ async function schema(DB) {
     DB.prepare('CREATE INDEX IF NOT EXISTS idx_users_bal ON users(bal)'),
     DB.prepare('CREATE TABLE IF NOT EXISTS refs(uid INTEGER PRIMARY KEY,ref INTEGER,earned INTEGER DEFAULT 0,ts INTEGER)'),
     DB.prepare('CREATE INDEX IF NOT EXISTS idx_refs_ref ON refs(ref)'),
+    DB.prepare('CREATE TABLE IF NOT EXISTS quests(uid INTEGER,key TEXT,done INTEGER DEFAULT 0,claimed INTEGER DEFAULT 0,day INTEGER,PRIMARY KEY(uid,key,day))'),
   ]);
   // добавляем колонки удачи к промокодам (если уже есть — ошибка игнорируется)
-  for (const q of ['ALTER TABLE promos ADD COLUMN luck REAL DEFAULT 1', 'ALTER TABLE promos ADD COLUMN hours REAL DEFAULT 0', 'ALTER TABLE users ADD COLUMN refearned INTEGER DEFAULT 0', 'ALTER TABLE users ADD COLUMN refbonus INTEGER DEFAULT 0']) {
+  for (const q of ['ALTER TABLE promos ADD COLUMN luck REAL DEFAULT 1', 'ALTER TABLE promos ADD COLUMN hours REAL DEFAULT 0', 'ALTER TABLE users ADD COLUMN refearned INTEGER DEFAULT 0', 'ALTER TABLE users ADD COLUMN refbonus INTEGER DEFAULT 0', 'ALTER TABLE users ADD COLUMN dstr INTEGER DEFAULT 0', 'ALTER TABLE users ADD COLUMN dlast INTEGER DEFAULT 0']) {
     try { await DB.prepare(q).run(); } catch (e) { /* колонка уже есть */ }
   }
   ready = true;
@@ -131,7 +141,7 @@ async function state(DB, uid, isAdmin) {
   const u = await DB.prepare('SELECT * FROM users WHERE id=?').bind(uid).first();
   const cars = (await DB.prepare('SELECT id,name n,tier t,value v FROM cars WHERE uid=? ORDER BY id').bind(uid).all()).results;
   const now = Date.now();
-  return { ok: true, id: uid, bal: u.bal, opened: u.opened, best: u.best, lw: u.lw, ld: u.ld, luck: u.luck_until > now ? u.luck : 1, luckUntil: u.luck_until, cars, admin: isAdmin, now };
+  return { ok: true, id: uid, bal: u.bal, opened: u.opened, best: u.best, lw: u.lw, ld: u.ld, luck: u.luck_until > now ? u.luck : 1, luckUntil: u.luck_until, cars, admin: isAdmin, now, dstr: u.dstr || 0, dlast: u.dlast || 0 };
 }
 async function credit(DB, uid, item) {
   const now = Date.now();
@@ -172,6 +182,17 @@ async function handle(a, uid, u, env) {
         DB.prepare('UPDATE users SET best=MAX(best,?) WHERE id=?').bind(Math.max(...drops.map((d) => d.v)), uid),
       ]);
       drops.forEach((d, i) => { d.id = res[i].meta.last_row_id; });
+      // прогресс заданий на открытие
+      try {
+        const dk = dayKey();
+        for (const key of ['open3','open5']) {
+          const qr = await env.DB.prepare('SELECT done,claimed FROM quests WHERE uid=? AND key=? AND day=?').bind(uid, key, dk).first();
+          if (qr && !qr.claimed) {
+            const nd = Math.min(5, (qr.done || 0) + n);
+            await env.DB.prepare('UPDATE quests SET done=? WHERE uid=? AND key=? AND day=?').bind(nd, uid, key, dk).run();
+          }
+        }
+      } catch(e) {}
       return json({ ...(await st()), drops: drops.map((d) => ({ id: d.id, n: d.n, t: d.t, v: d.v })) });
     }
 
@@ -187,8 +208,19 @@ async function handle(a, uid, u, env) {
       }
       const r = await DB.prepare(sql).bind(...args).all();
       const sum = r.results.reduce((s, x) => s + x.value, 0);
+      const soldn = r.results.length;
       if (sum) await DB.prepare('UPDATE users SET bal=bal+? WHERE id=?').bind(sum, uid).run();
       await payRef(DB, uid, sum);
+      try {
+        const dk = dayKey();
+        for (const key of ['sell2','sell4']) {
+          const qr = await env.DB.prepare('SELECT done,claimed FROM quests WHERE uid=? AND key=? AND day=?').bind(uid, key, dk).first();
+          if (qr && !qr.claimed) {
+            const nd = Math.min(4, (qr.done || 0) + soldn);
+            await env.DB.prepare('UPDATE quests SET done=? WHERE uid=? AND key=? AND day=?').bind(nd, uid, key, dk).run();
+          }
+        }
+      } catch(e) {}
       return json({ ...(await st()), sold: r.results.length, sum });
     }
 
@@ -203,9 +235,19 @@ async function handle(a, uid, u, env) {
 
     case 'daily': {
       const now = Date.now();
-      const r = await DB.prepare('UPDATE users SET bal=bal+?,ld=? WHERE id=? AND ld<=?').bind(DAILY_BONUS, now, uid, now - DAILY_CD).run();
+      const dk = dayKey();
+      let str = u.dstr || 0, dl = u.dlast || 0;
+      if (dl === dk) return err('cd', 'Бонус уже забран');
+      // стрик: если вчера — +1, иначе сброс на 1
+      const prev = dl ? new Date(Math.floor(dl/10000), Math.floor((dl%10000)/100)-1, dl%100) : null;
+      const nd = new Date(now);
+      const yk = nd.getFullYear()*10000 + (nd.getMonth())*100 + nd.getDate(); // вчера
+      if (prev && prev.getFullYear()===Math.floor(yk/10000) && (prev.getMonth()+1)===Math.floor((yk%10000)/100) && prev.getDate()===yk%100) str += 1; else str = 1;
+      const mult = 1 + Math.min(6, str-1)*0.1; // +10% за каждый день подряд, макс +60%
+      const gain = Math.round(DAILY_BONUS * mult);
+      const r = await DB.prepare('UPDATE users SET bal=bal+?,ld=?,dstr=?,dlast=? WHERE id=? AND (dlast IS NULL OR dlast<?)').bind(gain, now, str, dk, uid, dk).run();
       if (!r.meta.changes) return err('cd', 'Бонус уже забран');
-      return json({ ...(await st()), gain: DAILY_BONUS });
+      return json({ ...(await st()), gain, str });
     }
 
     case 'top': {
@@ -314,6 +356,16 @@ async function handle(a, uid, u, env) {
       const del = await DB.prepare('DELETE FROM cars WHERE id=? AND uid=? RETURNING id').bind(carId, uid).all();
       if (!del.results.length) return err('nocar', 'Машина не найдена');
       const win = (crypto.getRandomValues(new Uint32Array(1))[0] / 4294967296) * 100 < mode.c;
+      try {
+        const dk = dayKey();
+        for (const key of ['up1','up2']) {
+          const qr = await env.DB.prepare('SELECT done,claimed FROM quests WHERE uid=? AND key=? AND day=?').bind(uid, key, dk).first();
+          if (qr && !qr.claimed) {
+            const nd = Math.min(2, (qr.done || 0) + 1);
+            await env.DB.prepare('UPDATE quests SET done=? WHERE uid=? AND key=? AND day=?').bind(nd, uid, key, dk).run();
+          }
+        }
+      } catch(e) {}
       if (!win) return json({ ...(await st()), up: { win: false, v: car.value } });
       const nv = car.value * mode.m, nt = tierFor(nv), cs = CARS[nt], c = cs[wpick(cs.map((x) => x[2]))];
       const ins = await DB.prepare('INSERT INTO cars(uid,name,tier,value) VALUES(?,?,?,?)').bind(uid, c[0], nt, nv).run();
@@ -350,6 +402,32 @@ async function handle(a, uid, u, env) {
     case 'news': {
       const rows = (await DB.prepare('SELECT id,title,body,ts FROM news ORDER BY id DESC LIMIT 20').all()).results;
       return json({ ok: true, news: rows });
+    }
+
+    case 'quests': {
+      const dk = dayKey();
+      const qs = pickQs();
+      const out = [];
+      for (let i = 0; i < qs.length; i++) {
+        const q = qs[i];
+        await env.DB.prepare('INSERT OR IGNORE INTO quests(uid,key,done,claimed,day) VALUES(?,?,?,?,0)').bind(uid, q.id, 0, 0, dk).run();
+        const row = await env.DB.prepare('SELECT done,claimed FROM quests WHERE uid=? AND key=? AND day=?').bind(uid, q.id, dk).first();
+        out.push({ id: q.id, txt: q.txt, need: q.need, done: Math.min(q.need, (row && row.done) || 0), claimed: (row && row.claimed) ? 1 : 0, rub: q.rub });
+      }
+      return json({ ok: true, quests: out });
+    }
+    case 'qclaim': {
+      const dk = dayKey();
+      const q = QLIST.find((x) => x.id === a.q);
+      if (!q) return err('bad');
+      const row = await env.DB.prepare('SELECT done,claimed FROM quests WHERE uid=? AND key=? AND day=?').bind(uid, q.id, dk).first();
+      if (!row || (row.done || 0) < q.need) return err('no', 'Не выполнено');
+      if (row.claimed) return err('done', 'Уже получено');
+      await env.DB.batch([
+        env.DB.prepare('UPDATE quests SET claimed=1 WHERE uid=? AND key=? AND day=?').bind(uid, q.id, dk),
+        env.DB.prepare('UPDATE users SET bal=bal+? WHERE id=?').bind(q.rub, uid),
+      ]);
+      return json({ ...(await st()), gain: q.rub });
     }
 
     case 'adm': {
