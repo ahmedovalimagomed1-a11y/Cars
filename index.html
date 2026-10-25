@@ -99,12 +99,12 @@ textarea.inp{min-height:90px;resize:vertical}
 .upcar{background:var(--c1);border-radius:18px;padding:12px;text-align:center;border:2px solid color-mix(in srgb,var(--c) 55%,transparent);box-shadow:0 0 22px color-mix(in srgb,var(--c) 25%,transparent)}
 .upcar h4{font-size:14px;margin:8px 0 2px;line-height:1.2}
 .upcar .pv{color:var(--mut);font-size:13px}
-.upw{position:relative;width:230px;height:230px;margin:8px auto}
-.upwave{position:absolute;inset:0;border-radius:50%;background:conic-gradient(var(--acc) calc(var(--p)*1%),var(--c3) 0);-webkit-mask:radial-gradient(circle,transparent 59%,#000 60%);mask:radial-gradient(circle,transparent 59%,#000 60%)}
-.updisc{position:absolute;inset:26px;border-radius:50%;background:var(--c1);display:grid;place-items:center;text-align:center}
-.updisc b{font-size:32px}.updisc small{color:var(--mut);display:block;font-size:12px}
-.upneed{position:absolute;inset:0;z-index:2}
-.upneed i{position:absolute;left:14px;top:50%;width:0;height:0;border:7px solid transparent;border-left:14px solid #ffd84a;transform:translateY(-50%);filter:drop-shadow(0 0 6px rgba(255,201,40,.55))}
+.upw{position:relative;width:238px;height:238px;margin:10px auto}
+.uprot{position:absolute;inset:0;border-radius:50%}
+.upwave{position:absolute;inset:0;border-radius:50%;background:conic-gradient(var(--acc) calc(var(--p)*1%),var(--c3) 0);-webkit-mask:radial-gradient(circle,transparent 58%,#000 59%);mask:radial-gradient(circle,transparent 58%,#000 59%)}
+.updisc{position:absolute;inset:28px;border-radius:50%;background:radial-gradient(circle at 50% 40%,#26262b,#17171a);display:grid;place-items:center;text-align:center;box-shadow:inset 0 0 40px #000}
+.updisc b{font-size:34px}.updisc small{color:var(--mut);display:block;font-size:12px}
+.uptr{position:absolute;left:4px;top:50%;width:0;height:0;border:9px solid transparent;border-left:18px solid #ffd84a;transform:translateY(-50%);filter:drop-shadow(0 0 8px rgba(255,200,40,.45));z-index:3}
 .uppick .list>div{cursor:pointer}
 .demo{background:var(--c1);border-radius:14px;padding:8px 12px;font-size:12px;color:var(--mut);text-align:center;margin-bottom:8px}
 </style>
@@ -274,7 +274,7 @@ function upV(){const u=V.up,ch=(UPGC.find(x=>x[0]==u.m)||[])[1]||50;
  return`<div class="upgrid">
  <div class="upcar" ${col(u.car.t)}>${phH(u.car.n,u.car.t)}<h4>${esc(u.car.n)}</h4><div class="pv">${fmt(u.car.v)}</div><button class="mini" style="margin-top:8px" data-a="upreset">Заменить</button></div>
  <div class="upcar" ${col(t)}>${phH(tgt[0],t)}<h4 style="color:${T[t].c}">${esc(tgt[0])}</h4><div class="pv">${fmt(nv)}</div><span class="mut" style="font-size:11px">если повезёт</span></div></div>
- <div class="upw" style="--p:${ch}"><div class="upwave"></div><div class="updisc"><div><b>${ch}%</b><small>шанс успеха</small></div></div><div class="upneed" id="upneed" style="transform:rotate(${u.res&&!u.anim?u.ang:(u.angPrev||0)}deg)"><i>➤</i></div></div>
+ <div class="upw" style="--p:${ch}"><div class="upwave"></div><div class="uprot" id="uprot" style="transform:rotate(${u.res&&!u.anim?u.ang:(u.angPrev||0)}deg)"><div class="uptr"></div></div><div class="updisc"><div><b>${ch}%</b><small>шанс</small></div></div></div>
  <div class="modes">${UPGC.map(x=>`<button class="chip ${u.m==x[0]?'on':''}" data-a="upm" data-m="${x[0]}">×${x[0]} · ${x[1]}%</button>`).join('')}</div>
  <div class="cta"><button class="go" data-a="upgo" ${u.busy?'disabled':''}>⚡ Апгрейд ×${u.m}<em>${fmt(u.car.v)} → ${fmt(nv)}</em></button></div>`}
 function pickH(){const cs=[...S.cars].sort((a,b)=>b.v-a.v).slice(0,80);
@@ -289,11 +289,11 @@ async function upgo(){const u=V.up;if(!u||u.busy||!u.car)return;const ch=(UPGC.f
   if(win){const nv=old.v*u.m,t=tierF(nv),cs=CARS[t],c=cs[(old.id*7+u.m*13)%cs.length];res={win:true,id:++demoId,n:c[0],t,v:nv};S.cars=S.cars.filter(x=>x.id!=old.id).concat([{id:res.id,n:res.n,t,v:nv}])}
   else{res={win:false,v:old.v};S.cars=S.cars.filter(x=>x.id!=old.id)}}
  else{const j=await api('upgrade',{carId:u.car.id,m:u.m});if(!j){u.busy=false;render();return}res=j.up}
- const arc=ch*3.6,pad=16,ang=win0(res,arc,pad);
- u.angPrev=u.ang||0;u.ang=u.angPrev-Math.floor(u.angPrev/360)*360+4*360+ang;u.res=res;u.busy=false;
- render();const nd=$('#upneed');
- if(nd){nd.style.transition='none';nd.getBoundingClientRect();nd.style.transition='transform 2.4s cubic-bezier(.25,.7,.15,1)';nd.style.transform=`rotate(${u.ang}deg)`}
- hap();await wait(2650);u.anim=false;hap('heavy');render()}
+ const arc=ch*3.6,pad=12,ang=win0(res,arc,pad);
+ u.angPrev=u.ang||0;u.ang=u.angPrev-Math.floor(u.angPrev/360)*360+5*360+ang;u.res=res;u.busy=false;
+ render();const nd=$('#uprot');
+ if(nd){nd.style.transition='none';nd.getBoundingClientRect();nd.style.transition='transform 3s cubic-bezier(.25,.8,.2,1)';nd.style.transform=`rotate(${u.ang}deg)`}
+ hap();await wait(3200);u.anim=false;hap('heavy');render()}
 function win0(res,arc,pad){return res.win?90+pad+Math.random()*Math.max(1,arc-2*pad):90+arc+pad+Math.random()*Math.max(1,360-arc-2*pad)}
 
 function sheetV(){const s=V.sheet;
